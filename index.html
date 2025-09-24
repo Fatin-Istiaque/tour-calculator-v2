@@ -106,13 +106,14 @@
     <div class="container">
         <div class="header">
             <h1>💰 Collaborative Expense Tracker</h1>
-            <p>Real-time expense tracking and settlement for your group</p>
+            <p>Real-time expense tracking for your group. All data is saved automatically.</p>
         </div>
         
         <div class="main-content">
-            <div class="trip-info">
-                <p>Share this link with your group! Trip ID: <code id="tripId" title="Click to copy">Loading...</code></p>
-                 <span id="copyFeedback" style="display:none; color: green; font-weight: bold;">Copied!</span>
+            <div id="firebase-error-container" style="display:none; background-color: #f8d7da; color: #721c24; padding: 20px; border-radius: 8px; margin-bottom: 20px; border: 1px solid #f5c6cb;">
+                <h3 style="margin-top: 0;">Firebase Configuration Error</h3>
+                <p id="firebase-error-message"></p>
+                <p>Please follow the steps in the error message, then refresh this page.</p>
             </div>
 
             <div class="participants-info">
@@ -252,7 +253,7 @@
     <script type="module">
         // Firebase Imports
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
-        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
         import { getFirestore, doc, setDoc, addDoc, onSnapshot, collection, query, deleteDoc, updateDoc, writeBatch } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         const participants = ['Nafi', 'Himika', 'Mysha', 'Rafid', 'Razon', 'Naima', 'Zohra', 'Fatin'];
@@ -261,13 +262,12 @@
 
         // Firestore Globals
         let db, auth;
-        let tripId;
         let expensesCollection, paymentsCollection;
         let unsubscribeExpenses, unsubscribePayments;
+        const fixedTripId = "shared_trip_2025"; // A fixed ID for everyone
 
         // App Initialization
         document.addEventListener('DOMContentLoaded', async () => {
-            setupTripId();
             await initializeFirebase();
             
             const today = new Date().toISOString().split('T')[0];
@@ -282,7 +282,6 @@
             document.getElementById('paymentReceiver').addEventListener('change', updatePaymentPreview);
             document.getElementById('paymentAmount').addEventListener('input', updatePaymentPreview);
             
-            document.getElementById('tripId').addEventListener('click', copyTripId);
             document.getElementById('copySettlementBtn').addEventListener('click', () => {
                 const textToCopy = document.getElementById('settlementResult').innerText;
                 copyTextToClipboard(textToCopy, 'copySettlementBtn');
@@ -292,45 +291,30 @@
             updateAllDisplays();
         });
 
-        function setupTripId() {
-            let id = '';
-            if (window.location.hash) {
-                id = window.location.hash.substring(1).replace(/[^a-zA-Z0-9]/g, '');
-            } 
-            
-            if (!id) { 
-                id = Math.random().toString(36).substring(2, 10);
-            }
-
-            tripId = id;
-            
-            if (window.location.hash !== `#${tripId}`) {
-                window.location.hash = tripId;
-            }
-
-            document.getElementById('tripId').textContent = tripId;
-        }
-
         async function initializeFirebase() {
             try {
-                const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-                const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+                // This is your specific Firebase configuration
+                const firebaseConfig = {
+                  apiKey: "AIzaSyAj2x7M_62ppkd3-3VdlfgSzhB3tVAEx9g",
+                  authDomain: "calculator-6afe0.firebaseapp.com",
+                  projectId: "calculator-6afe0",
+                  storageBucket: "calculator-6afe0.firebasestorage.app",
+                  messagingSenderId: "889591090993",
+                  appId: "1:889591090993:web:a6330b202c91b15d742a10"
+                };
 
                 const app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
                 
-                if (typeof __initial_auth_token !== 'undefined') { 
-                    await signInWithCustomToken(auth, __initial_auth_token); 
-                } else { 
-                    await signInAnonymously(auth); 
-                }
+                await signInAnonymously(auth); 
                 
                 onAuthStateChanged(auth, user => {
                     if (user) {
                         console.log("User is signed in with uid:", user.uid);
-                        const expensesPath = `/artifacts/${appId}/public/data/expenses_${tripId}`;
-                        const paymentsPath = `/artifacts/${appId}/public/data/payments_${tripId}`;
+                        // The database path now uses the fixed, hardcoded Trip ID
+                        const expensesPath = `expenses_${fixedTripId}`;
+                        const paymentsPath = `payments_${fixedTripId}`;
                         expensesCollection = collection(db, expensesPath);
                         paymentsCollection = collection(db, paymentsPath);
                         setupRealtimeListeners();
@@ -341,7 +325,14 @@
 
             } catch (error) {
                 console.error("Firebase initialization failed:", error);
-                alert("Could not connect to the database. Please check your connection and refresh.");
+                const errorContainer = document.getElementById('firebase-error-container');
+                const errorMessageEl = document.getElementById('firebase-error-message');
+                if (error.code === 'auth/configuration-not-found') {
+                    errorMessageEl.innerHTML = "<strong>Anonymous sign-in is not enabled.</strong> To fix this, please go to your Firebase Console, navigate to 'Authentication', click on the 'Sign-in method' tab, find 'Anonymous' in the list of providers, and enable it.";
+                } else {
+                    errorMessageEl.textContent = "An unexpected error occurred while trying to connect to the database. Please check the console for details and ensure your Firebase configuration is correct.";
+                }
+                errorContainer.style.display = 'block';
             }
         }
 
@@ -389,7 +380,7 @@
             const url = URL.createObjectURL(dataBlob);
             const link = document.createElement('a');
             link.href = url;
-            link.download = `trip-data-${tripId}-${new Date().toISOString().split('T')[0]}.json`;
+            link.download = `trip-data-${fixedTripId}-${new Date().toISOString().split('T')[0]}.json`;
             document.body.appendChild(link);
             link.click();
             document.body.removeChild(link);
@@ -446,7 +437,7 @@
         // --- Gemini API Call Function ---
         async function callGemini(prompt, button) {
             button.disabled = true;
-            const apiKey = ""; 
+            const apiKey = ""; // You can add a Gemini API key here if required by your hosting environment
             const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-05-20:generateContent?key=${apiKey}`;
             
             const payload = { contents: [{ parts: [{ text: prompt }] }] };
@@ -926,10 +917,6 @@
             });
             tableHTML += '</tbody></table>';
             container.innerHTML = tableHTML;
-        }
-        
-        function copyTripId() {
-            copyTextToClipboard(window.location.href, 'copyFeedback');
         }
         
         function copyTextToClipboard(text, feedbackElementId) {
